@@ -187,9 +187,12 @@ if btn_disparar:
 
 # --- LÓGICA DE PROCESSAMENTO EM BACKGROUND ---
 if st.session_state.rodando:
+
+    if coluna_selecionada is None:
+        st.error("Selecione a coluna contendo os CNPJs.")
+        st.stop()
+
     lista_bruta = df_entrada[coluna_selecionada].dropna().tolist()
-    cnpjs_processados = set()
-    resultados_atuais = []
 
     # Recupera o progresso do arquivo na pasta de destino (Anti-queda)
     if os.path.exists(caminho_final_salvamento):
@@ -280,16 +283,15 @@ if st.session_state.rodando:
             if sucesso_req and (index % 5 == 0 or index == total - 1):
                 try:
                     with pd.ExcelWriter(
-                    caminho_final_salvamento,
-                    engine="openpyxl"
-                ) as writer:
-                    pd.DataFrame(resultados_atuais).to_excel(
-                        writer,
-                        index=False
-                    )
-                except:
-                    pass
-
+                        caminho_final_salvamento,
+                        engine="openpyxl"
+                    ) as writer:
+                        pd.DataFrame(resultados_atuais).to_excel(
+                            writer,
+                            index=False
+                        )
+                except Exception as e:
+                    st.error(f"Erro ao salvar arquivo: {e}")
             # Trava para não tomar erro 429
             if index < total - 1:
                 time.sleep(tempo_ciclo_fixo)
