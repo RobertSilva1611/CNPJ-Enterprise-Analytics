@@ -170,8 +170,6 @@ col1, col2 = st.columns([1, 4])
 # Só libera o botão INICIAR se o usuário selecionou o arquivo, a aba, a coluna e A PASTA DESTINO.
 disponivel_para_rodar = (
     arquivo_carregado is not None
-    and aba_selecionada is not None
-    and coluna_selecionada is not None
     and df_entrada is not None
 )
 
@@ -281,7 +279,14 @@ if st.session_state.rodando:
             # SALVA DIRETAMENTE NA PASTA ESCOLHIDA PELO EXPLORADOR DO WINDOWS
             if sucesso_req and (index % 5 == 0 or index == total - 1):
                 try:
-                    pd.DataFrame(resultados_atuais).to_excel(caminho_final_salvamento, index=False)
+                    with pd.ExcelWriter(
+                    caminho_final_salvamento,
+                    engine="openpyxl"
+                ) as writer:
+                    pd.DataFrame(resultados_atuais).to_excel(
+                        writer,
+                        index=False
+                    )
                 except:
                     pass
 
