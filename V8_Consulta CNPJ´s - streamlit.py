@@ -116,15 +116,24 @@ if arquivo_carregado:
     except Exception as e:
         st.sidebar.error(f"Erro ao ler o arquivo: {e}")
 
-st.sidebar.markdown("---")
+# --- SUBSTITUA A SUA SIDEBAR POR ESTE BLOCO LIMPO ---
 st.sidebar.title("💾 Destino dos Resultados")
+st.sidebar.info("Ao finalizar o processamento, o botão de download aparecerá aqui automaticamente.")
 
-# Botão para abrir o explorador do Windows
-if st.sidebar.button("📁 Escolher Pasta de Destino", use_container_width=True):
-    pasta = abrir_explorador_windows()
-    if pasta:
-        st.session_state.pasta_destino = os.path.normpath(pasta)
-        st.rerun()
+# Botão de Download Dinâmico (Lê o arquivo gerado e entrega ao usuário)
+# O nome do arquivo gerado agora é constante para facilitar
+NOME_ARQUIVO_FINAL = "RESULTADOS_CNPJ.xlsx"
+
+if os.path.exists(NOME_ARQUIVO_FINAL):
+    with open(NOME_ARQUIVO_FINAL, "rb") as f:
+        bytes_excel = f.read()
+    st.sidebar.download_button(
+        label="📥 Baixar Planilha Consolidada",
+        data=bytes_excel,
+        file_name=NOME_ARQUIVO_FINAL,
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        type="primary"
+    )
 
 # Mostra a pasta escolhida e o nome do arquivo
 if st.session_state.pasta_destino != "":
