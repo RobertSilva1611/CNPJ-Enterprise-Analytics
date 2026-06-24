@@ -135,12 +135,6 @@ if os.path.exists(NOME_ARQUIVO_FINAL):
         type="primary"
     )
 
-# Mostra a pasta escolhida e o nome do arquivo
-if st.session_state.pasta_destino != "":
-    st.sidebar.success(f"**Pasta Selecionada:**\n{st.session_state.pasta_destino}")
-else:
-    st.sidebar.warning("⚠️ Nenhuma pasta selecionada.")
-
 nome_arquivo_saida = st.sidebar.text_input("Nome do arquivo de saída", value="RESULTADOS_CNPJ.xlsx")
 caminho_final_salvamento = os.path.join(st.session_state.pasta_destino, nome_arquivo_saida) if st.session_state.pasta_destino else ARQUIVO_BACKUP
 
