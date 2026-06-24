@@ -136,7 +136,7 @@ if os.path.exists(NOME_ARQUIVO_FINAL):
     )
 
 nome_arquivo_saida = st.sidebar.text_input("Nome do arquivo de saída", value="RESULTADOS_CNPJ.xlsx")
-caminho_final_salvamento = os.path.join(st.session_state.pasta_destino, nome_arquivo_saida) if st.session_state.pasta_destino else ARQUIVO_BACKUP
+caminho_final_salvamento = NOME_ARQUIVO_FINAL  # sempre "RESULTADOS_CNPJ.xlsx"
 
 
 st.sidebar.markdown("---")
@@ -178,7 +178,7 @@ log_placeholder = tab_logs.empty()
 # Botões de Ação
 col1, col2 = st.columns([1, 4])
 # Só libera o botão INICIAR se o usuário selecionou o arquivo, a aba, a coluna e A PASTA DESTINO.
-disponivel_para_rodar = arquivo_carregado and aba_selecionada and coluna_selecionada and st.session_state.pasta_destino != ""
+disponivel_para_rodar = arquivo_carregado and aba_selecionada and coluna_selecionada
 
 with col1:
     btn_disparar = st.button("▶️ Iniciar Processamento", disabled=not disponivel_para_rodar or st.session_state.rodando, use_container_width=True)
