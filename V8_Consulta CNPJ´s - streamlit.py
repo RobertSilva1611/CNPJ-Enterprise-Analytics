@@ -12,7 +12,7 @@ from fpdf import FPDF
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
     page_title="Consulta CNPJ",
-    page_icon="📊",
+    page_icon="enterprise.png",
     layout="wide",
     initial_sidebar_state="expanded"
 )
