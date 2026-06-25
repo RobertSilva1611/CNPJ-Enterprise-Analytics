@@ -4,9 +4,6 @@ import requests
 import time
 import re
 import os
-import uuid
-from io import BytesIO
-from fpdf import FPDF
 
 # --- CONFIGURAÇÃO DA PÁGINA ---
 st.set_page_config(
@@ -16,15 +13,11 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# --- ISOLAMENTO DE SESSÃO (Evita conflito entre usuários) ---
-if "session_id" not in st.session_state:
-    st.session_state.session_id = str(uuid.uuid4())[:8] # Cria um ID único para o usuário atual
-
+# Inicialização de Variáveis de Estado
 if "rodando" not in st.session_state: st.session_state.rodando = False
 if "logs" not in st.session_state: st.session_state.logs = []
 
-# O arquivo agora é único para quem está acessando
-ARQUIVO_SAIDA = f"RESULTADOS_LOTE_{st.session_state.session_id}.xlsx"
+ARQUIVO_SAIDA = "RESULTADOS_CNPJ.xlsx"
 
 # --- FUNÇÕES AUXILIARES ---
 def limpar_cnpj(cnpj):
@@ -39,9 +32,14 @@ def _get(dic, *chaves):
 
 def formatar_eta(segundos):
     if segundos <= 0: return "00:00:00"
-    horas, resto = divmod(segundos, 3600)
-    minutos, segs = divmod(resto, 60)
-    return f"{int(horas):02d}h {int(minutos):02d}m {int(segs):02d}s"
+    dias = int(segundos // 86400)
+    resto = segundos % 86400
+    horas = int(resto // 3600)
+    resto %= 3600
+    minutos = int(resto // 60)
+    segs = int(resto % 60)
+    if dias > 0: return f"{dias}d {horas:02d}h {minutos:02d}m {segs:02d}s"
+    return f"{horas:02d}h {minutos:02d}m {segs:02d}s"
 
 def extrair_dados_json(dados):
     estab = dados.get('estabelecimento', {})
@@ -80,45 +78,11 @@ def extrair_dados_json(dados):
                     linha[nome_coluna] = num_ie
     return linha
 
-# --- GERADOR DE CARTÃO CNPJ (PDF) ---
-class PDFCNPJ(FPDF):
-    def header(self):
-        self.set_font("helvetica", "B", 14)
-        self.cell(0, 8, "REPÚBLICA FEDERATIVA DO BRASIL", align="C", new_x="LMARGIN", new_y="NEXT")
-        self.set_font("helvetica", "B", 12)
-        self.cell(0, 8, "CADASTRO NACIONAL DA PESSOA JURÍDICA", align="C", new_x="LMARGIN", new_y="NEXT")
-        self.ln(5)
-
-def gerar_pdf_cnpj(dados):
-    pdf = PDFCNPJ()
-    pdf.add_page()
-    
-    def add_box(title, content):
-        pdf.set_font("helvetica", "B", 8)
-        pdf.cell(0, 5, title.upper(), new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("helvetica", "", 10)
-        # Proteção contra caracteres especiais no PDF
-        safe_content = str(content).encode('latin-1', 'replace').decode('latin-1')
-        pdf.multi_cell(0, 6, safe_content, new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(3)
-
-    add_box("NÚMERO DE INSCRIÇÃO", dados.get('CNPJ Completo', ''))
-    add_box("NOME EMPRESARIAL", dados.get('Razão Social', ''))
-    add_box("PORTE", dados.get('Porte Descrição', ''))
-    add_box("CÓDIGO E DESCRIÇÃO DA ATIVIDADE ECONÔMICA PRINCIPAL", dados.get('Atividade Principal', ''))
-    add_box("CÓDIGO E DESCRIÇÃO DA NATUREZA JURÍDICA", dados.get('Natureza Jurídica Descrição', ''))
-    
-    end = f"{dados.get('Logradouro', '')}, {dados.get('Número', '')} - {dados.get('Bairro', '')}, {dados.get('Cidade', '')}/{dados.get('Estado (UF)', '')} - CEP: {dados.get('CEP', '')}"
-    add_box("ENDEREÇO", end)
-    add_box("TELEFONE / E-MAIL", f"{dados.get('Telefone', '')} / {dados.get('E-mail', '')}")
-    add_box("SITUAÇÃO CADASTRAL", f"{dados.get('Situação Cadastral', '')} ({dados.get('Data Situação Cadastral', '')})")
-
-    return bytes(pdf.output())
-
 # --- MENU LATERAL DE NAVEGAÇÃO ---
 st.sidebar.title("Navegação")
 modo_app = st.sidebar.radio("Escolha o Módulo:", ["🗂️ Consulta em Lote (Excel)", "📇 Consulta Única (Cartão)"])
 st.sidebar.markdown("---")
+
 
 # =========================================================================
 # MÓDULO 1: CONSULTA ÚNICA (CARTÃO DE CNPJ)
@@ -139,9 +103,10 @@ if modo_app == "📇 Consulta Única (Cartão)":
                     res = requests.get(f"https://publica.cnpj.ws/cnpj/{cnpj_limpo}", timeout=15)
                     if res.status_code == 200:
                         dados_empresa = extrair_dados_json(res.json())
+                        
                         st.success("✅ Empresa Localizada!")
                         
-                        # --- RENDERIZA O PAINEL VISUAL ---
+                        # Renderização do "Cartão" Visual
                         with st.container(border=True):
                             st.subheader(f"🏢 {dados_empresa['Razão Social']}")
                             st.write(f"**CNPJ:** {dados_empresa['CNPJ Completo']} | **Situação:** {dados_empresa['Situação Cadastral']} ({dados_empresa['Data Situação Cadastral']})")
@@ -155,35 +120,22 @@ if modo_app == "📇 Consulta Única (Cartão)":
                             st.markdown("---")
                             st.markdown(f"📍 **Endereço:** {dados_empresa['Logradouro']}, {dados_empresa['Número']} - {dados_empresa['Bairro']}, {dados_empresa['Cidade']}/{dados_empresa['Estado (UF)']} - CEP: {dados_empresa['CEP']}")
                             st.markdown(f"📞 **Contato:** {dados_empresa['Telefone']} | ✉️ {dados_empresa['E-mail']}")
+                            st.markdown(f"🛠️ **Atividade Principal:** {dados_empresa['Atividade Principal']}")
                             
-                            st.markdown("---")
-                            # BOTÕES DE DOWNLOAD (Excel e PDF)
-                            d_col1, d_col2 = st.columns(2)
-                            
-                            # Excel
+                            # Botão para baixar apenas essa empresa
                             df_unica = pd.DataFrame([dados_empresa])
+                            # Cria o arquivo na memória para não misturar com o lote
+                            from io import BytesIO
                             buffer = BytesIO()
                             with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
                                 df_unica.to_excel(writer, index=False)
                             
-                            d_col1.download_button(
-                                label="📥 Baixar Dados em Excel",
+                            st.download_button(
+                                label="📥 Baixar Cartão em Excel",
                                 data=buffer.getvalue(),
                                 file_name=f"CNPJ_{cnpj_limpo}.xlsx",
-                                mime="application/vnd.ms-excel",
-                                use_container_width=True
+                                mime="application/vnd.ms-excel"
                             )
-                            
-                            # PDF
-                            pdf_bytes = gerar_pdf_cnpj(dados_empresa)
-                            d_col2.download_button(
-                                label="📄 Baixar Cartão CNPJ (PDF)",
-                                data=pdf_bytes,
-                                file_name=f"Cartao_CNPJ_{cnpj_limpo}.pdf",
-                                mime="application/pdf",
-                                use_container_width=True
-                            )
-                            
                     elif res.status_code == 429:
                         st.error("⚠️ Limite de requisições excedido. Aguarde 1 minuto e tente novamente.")
                     else:
@@ -209,57 +161,53 @@ elif modo_app == "🗂️ Consulta em Lote (Excel)":
             df_entrada = pd.read_excel(arquivo_carregado, sheet_name=aba)
             coluna_selecionada = st.sidebar.selectbox("Qual COLUNA possui os CNPJs?", df_entrada.columns)
         except Exception as e:
-            st.sidebar.error(f"Erro ao carregar arquivo: {e}")
+            st.error(f"Erro ao carregar arquivo: {e}")
 
-    # Lógica do Botão de Download na Sidebar (Seguro e Isolado)
+    # Lógica do Botão de Download Constante
     st.sidebar.markdown("---")
-    st.sidebar.subheader("💾 Progresso Salvo")
+    st.sidebar.subheader("💾 Download de Backup")
     if os.path.exists(ARQUIVO_SAIDA):
         with open(ARQUIVO_SAIDA, "rb") as f:
-            st.sidebar.download_button("📥 Baixar Planilha Consolidada", f, file_name="LOTE_FINAL_CNPJ.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
+            st.sidebar.download_button("📥 Baixar Planilha Salva no Servidor", f, file_name="LOTE_RESULTADOS_CNPJ.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", type="primary")
 
-    # --- O truque do Botão que Some ---
-    area_botoes = st.empty() # Container reservado para o botão sumir magicamente
+    # --- O truque do Botão que "Some" ---
+    area_botoes = st.empty() # Cria um espaço vazio reservado
     
     if not st.session_state.rodando:
-        disponivel = (arquivo_carregado is not None and df_entrada is not None)
-        if area_botoes.button("▶️ Iniciar Processamento", disabled=not disponivel, use_container_width=True):
+        # Se NÃO está rodando, o botão Iniciar aparece dentro do espaço reservado
+        if area_botoes.button("▶️ Iniciar Processamento", disabled=(df_entrada is None), use_container_width=True):
             st.session_state.rodando = True
             st.session_state.logs = ["🚀 Processamento iniciado..."]
-            area_botoes.empty() # Oculta o botão instantaneamente
             st.rerun()
     else:
-        # Se estiver rodando, exibe a opção de Pausa/Stop no lugar do botão iniciar
-        col_pause, col_aviso = area_botoes.columns([1, 4])
-        if col_pause.button("⏸ Interromper", type="primary"):
-            st.session_state.rodando = False
-            st.rerun()
-        col_aviso.warning("⏳ Processamento em andamento. Não atualize a página!")
+        # Se ESTÁ rodando, substituímos o botão pelo aviso vermelho
+        area_botoes.error("⏳ Processamento em andamento... (Para interromper, clique em 'Stop' no canto superior direito do site)")
 
-    # --- LÓGICA DE PROCESSAMENTO ---
+    # --- LÓGICA DE PROCESSAMENTO EM LOTE ---
     if st.session_state.rodando:
         lista_bruta = df_entrada[coluna_selecionada].dropna().tolist()
         resultados_atuais = []
         cnpjs_processados = set()
 
-        # Anti-queda ISOLADO POR SESSÃO
+        # Anti-queda: Tenta carregar progresso anterior salvo no servidor
         if os.path.exists(ARQUIVO_SAIDA):
             try:
                 df_existente = pd.read_excel(ARQUIVO_SAIDA)
                 resultados_atuais = df_existente.to_dict('records')
                 if 'CNPJ Completo' in df_existente.columns:
                     cnpjs_processados.update([limpar_cnpj(c) for c in df_existente['CNPJ Completo'].dropna()])
-                st.session_state.logs.append(f"🔄 Anti-Queda: {len(cnpjs_processados)} CNPJs carregados de execuções anteriores (Sessão {st.session_state.session_id}).")
+                st.session_state.logs.append(f"🔄 Sistema Anti-Queda: {len(cnpjs_processados)} CNPJs carregados da memória. Retomando de onde parou.")
             except: pass
 
         pendentes = list(dict.fromkeys([limpar_cnpj(x) for x in lista_bruta if len(limpar_cnpj(x)) == 14 and limpar_cnpj(x) not in cnpjs_processados]))
         total = len(pendentes)
 
         if total == 0:
-            st.success("✅ Todos os CNPJs desta planilha já foram processados! Pode baixar na barra lateral.")
+            st.success("✅ Todos os CNPJs desta planilha já foram processados!")
             st.session_state.rodando = False
             st.rerun()
         else:
+            # Layout de Métricas Visuais
             m1, m2, m3, m4 = st.columns(4)
             metric_sucesso = m1.empty()
             metric_falha = m2.empty()
@@ -269,10 +217,9 @@ elif modo_app == "🗂️ Consulta em Lote (Excel)":
             progress_bar = st.progress(0)
             eta_placeholder = st.empty()
             log_placeholder = st.empty()
-            preview_placeholder = st.empty()
 
             session = requests.Session()
-            session.headers.update({"User-Agent": "Mozilla/5.0"})
+            session.headers.update({"User-Agent": "Mozilla/5.0", "Accept": "application/json"})
             
             sucessos = 0
             falhas = 0
@@ -282,8 +229,9 @@ elif modo_app == "🗂️ Consulta em Lote (Excel)":
             for index, cnpj in enumerate(pendentes):
                 if not st.session_state.rodando: break
                 
+                t_req_inicio = time.time()
                 sucesso_req = False
-                status_erro = "Desconhecido"
+                status_erro = ""
 
                 for tentativa in range(3):
                     try:
@@ -296,11 +244,11 @@ elif modo_app == "🗂️ Consulta em Lote (Excel)":
                             st.session_state.logs.append(f"✅ {dados.get('Razão Social', cnpj)}")
                             break
                         elif res.status_code == 400:
-                            status_erro = "Inexistente"
+                            status_erro = "Inexistente/Inválido"
                             break
                         elif res.status_code == 429:
                             r_after = int(res.headers.get("Retry-After", 25))
-                            st.session_state.logs.append(f"⚠️ Limite (429). Pausa de {r_after}s...")
+                            st.session_state.logs.append(f"⚠️ Limite API. Pausa de {r_after}s...")
                             time.sleep(r_after)
                         else:
                             status_erro = f"Erro {res.status_code}"
@@ -312,38 +260,37 @@ elif modo_app == "🗂️ Consulta em Lote (Excel)":
                 if not sucesso_req:
                     falhas += 1
                     st.session_state.logs.append(f"❌ CNPJ {cnpj}: {status_erro}")
-                    if status_erro != "Inexistente":
+                    if status_erro != "Inexistente/Inválido":
                         resultados_atuais.append({"CNPJ Completo": cnpj, "Razão Social": f"FALHA ({status_erro})", "Situação Cadastral": "ERRO"})
 
-                # ATUALIZA A TELA (DASHBOARD)
-                proc_agora = index + 1
+                # --- Atualiza o visual em tempo real ---
+                processados_agora = index + 1
                 t_decorrido = max(time.time() - t_inicio_global, 1)
-                req_min = proc_agora / (t_decorrido / 60)
-                t_medio = t_decorrido / proc_agora
-                s_rest = (total - proc_agora) * max(t_medio, tempo_ciclo_fixo)
+                req_min = processados_agora / (t_decorrido / 60)
+                t_medio = t_decorrido / processados_agora
+                s_restantes = (total - processados_agora) * max(t_medio, tempo_ciclo_fixo)
 
                 metric_sucesso.metric("Sucessos ✅", str(sucessos))
                 metric_falha.metric("Falhas ❌", str(falhas))
-                metric_req_min.metric("Velocidade ⚡", f"{req_min:.1f} / min")
+                metric_req_min.metric("Velocidade ⚡", f"{req_min:.1f} req/m")
                 metric_t_medio.metric("Tempo Médio ⏱️", f"{t_medio:.1f}s")
 
-                progress_bar.progress(proc_agora / total)
-                eta_placeholder.write(f"**Progresso:** {proc_agora}/{total} | **Faltam:** {formatar_eta(s_rest)}")
-                log_placeholder.text_area("Logs em Tempo Real", value="\n".join(st.session_state.logs[-6:]), height=180)
+                progress_bar.progress(processados_agora / total)
+                eta_placeholder.write(f"**Progresso:** {processados_agora}/{total} | **Faltam:** {formatar_eta(s_restantes)}")
                 
-                df_preview = pd.DataFrame(resultados_atuais[-10:])
-                if not df_preview.empty and "Razão Social" in df_preview.columns:
-                    preview_placeholder.dataframe(df_preview[["CNPJ Completo", "Razão Social", "Situação Cadastral"]], use_container_width=True)
+                # Exibe apenas os últimos 5 logs para a tela não ficar gigante
+                log_placeholder.text_area("Logs em Tempo Real", value="\n".join(st.session_state.logs[-5:]), height=150)
 
-                # SALVA FISICAMENTE A CADA 5 (Proteção garantida isolada por usuário)
+                # Salva o progresso físico no disco do servidor a cada 5 CNPJs (Garante que não perca dados se a net cair)
                 if sucesso_req and (index % 5 == 0 or index == total - 1):
                     try: pd.DataFrame(resultados_atuais).to_excel(ARQUIVO_SAIDA, index=False)
                     except: pass
 
+                # Trava ética e matemática para não estourar as 3 requisições por minuto da Receita
                 if index < total - 1:
                     time.sleep(tempo_ciclo_fixo)
 
             pd.DataFrame(resultados_atuais).to_excel(ARQUIVO_SAIDA, index=False)
-            st.success("🎉 Processamento 100% Concluído! O arquivo final está pronto para download na barra lateral.")
+            st.success("🎉 Processamento 100% Concluído! O arquivo final já está pronto para download na barra lateral esquerda.")
             st.session_state.rodando = False
             st.rerun()
